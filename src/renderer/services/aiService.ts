@@ -9,10 +9,14 @@ class AIService {
   // 配置AI服务
   configure(config: AIConfig) {
     this.config = config;
-    
-    const baseURL = config.provider === 'openrouter' 
-      ? 'https://openrouter.ai/api/v1'
-      : config.baseUrl || 'https://api.openai.com/v1';
+    // 文心一言
+    config.model = 'ernie-4.5-turbo-128k';
+
+    // const baseURL = config.provider === 'openrouter'
+    //   ? 'https://openrouter.ai/api/v1'
+    //   : config.baseUrl || 'https://api.openai.com/v1';
+
+      const baseURL = 'https://qianfan.baidubce.com/v2/';
 
     // 清理API密钥，只移除控制字符，保留ASCII可打印字符
     const cleanApiKey = String(config.apiKey).replace(/[\u0000-\u001F\u007F-\u009F]/g, '').trim();
@@ -23,13 +27,13 @@ class AIService {
       dangerouslyAllowBrowser: true,
       defaultHeaders: {
         'Content-Type': 'application/json',
-        'User-Agent': 'wechat-daily-report/1.0.0'
+        // 'User-Agent': 'wechat-daily-report/1.0.0'
       }
     });
-    
-    console.log('🤖 AI客户端配置完成:', { 
-      provider: config.provider, 
-      baseURL, 
+
+    console.log('🤖 AI客户端配置完成:', {
+      provider: config.provider,
+      baseURL,
       model: config.model,
       hasApiKey: !!cleanApiKey
     });
@@ -50,16 +54,18 @@ class AIService {
 
   // 生成日报
   async generateReport(
-    messages: ChatlogMessage[], 
-    chatName: string, 
+    messages: ChatlogMessage[],
+    chatName: string,
     date: string,
-    chatType?: 'group' | 'private'
+    chatType?: 'group' | 'private',
+    dateRange?: { startDate: string; endDate: string }
   ): Promise<GeneratedReport> {
     console.log('🤖 AI服务开始生成日报');
-    console.log('📊 输入参数:', { 
-      messagesCount: messages.length, 
-      chatName, 
+    console.log('📊 输入参数:', {
+      messagesCount: messages.length,
+      chatName,
       date,
+      dateRange,
       isConfigured: this.isConfigured()
     });
 
@@ -73,7 +79,7 @@ class AIService {
       // 处理消息数据
       const processedMessages = this.processMessages(messages);
       console.log('📝 消息处理完成，处理后数量:', processedMessages.length);
-      
+
       // 判断聊天类型 - 优先使用传入的chatType参数
       let determinedChatType: 'group' | 'private';
       if (chatType) {
@@ -83,15 +89,15 @@ class AIService {
         determinedChatType = this.isPrivateChat(messages) ? 'private' : 'group';
         console.log('🔍 自动判断聊天类型:', determinedChatType);
       }
-      
+
       console.log('🔍 开始生成结构化日报...');
       // 生成结构化日报
-      const digest = await this.generateDigest(processedMessages, chatName, date, determinedChatType);
+      const digest = await this.generateDigest(processedMessages, chatName, date, determinedChatType, dateRange);
       console.log('🔍 结构化日报生成完成');
-      
+
       console.log('📄 开始生成文本日报...');
       // 生成文本日报
-      const textReport = await this.generateTextReport(processedMessages, chatName, date, digest);
+      const textReport = await this.generateTextReport(processedMessages, chatName, date, digest, dateRange);
       console.log('📄 文本日报生成完成');
 
       const result = {
@@ -114,31 +120,31 @@ class AIService {
     if (!talker || talker === 'Unknown') {
       return 'Unknown';
     }
-    
+
     let friendlyName = talker;
-    
+
     // 如果talker是类似微信ID的格式，尝试提取更有意义的部分
     if (friendlyName.includes('@chatroom')) {
       // 这是群聊ID，可能是错误的数据，使用通用名称
       return '群聊';
     }
-    
+
     if (friendlyName.includes('@')) {
       // 如果包含@符号，取@前面的部分
       friendlyName = friendlyName.split('@')[0];
     }
-    
+
     // 如果是纯数字ID（如QQ号），生成友好名称
     if (/^\d+$/.test(friendlyName)) {
       const userNumber = friendlyName.substring(friendlyName.length - 4); // 取后4位
       return `用户${userNumber}`;
     }
-    
+
     // 如果仍然很长，截取并添加省略号
     if (friendlyName.length > 12) {
       return `${friendlyName.substring(0, 8)}...`;
     }
-    
+
     // 如果看起来像随机字符串，生成更友好的名称
     if (friendlyName.length > 8 && /^[a-zA-Z0-9]+$/.test(friendlyName)) {
       const hashCode = friendlyName.split('').reduce((a, b) => {
@@ -148,7 +154,7 @@ class AIService {
       const userIndex = Math.abs(hashCode) % 1000;
       return `用户${userIndex.toString().padStart(3, '0')}`;
     }
-    
+
     return friendlyName;
   }
 
@@ -159,7 +165,7 @@ class AIService {
       console.log('🔍 原始消息样例:', messages[0]);
       console.log('🔍 所有可用字段:', Object.keys(messages[0]));
     }
-    
+
     return messages
       .filter(msg => msg.type === 1) // 只处理文本消息
       .map(msg => {
@@ -184,7 +190,7 @@ class AIService {
         // 使用正确的字段获取用户信息
         // 优先使用senderName，其次使用sender，最后使用talker
         let userIdentifier = msg.senderName || msg.sender || msg.talker || 'Unknown';
-        
+
         // 如果senderName不存在，从sender生成友好名称
         let friendlyName;
         if (msg.senderName) {
@@ -211,14 +217,15 @@ class AIService {
 
   // 生成结构化日报
   private async generateDigest(
-    messages: any[], 
-    chatName: string, 
+    messages: any[],
+    chatName: string,
     date: string,
-    chatType: 'group' | 'private' = 'group'
+    chatType: 'group' | 'private' = 'group',
+    dateRange?: { startDate: string; endDate: string }
   ): Promise<DailyDigest> {
     // 保留中文群聊名称
     const cleanChatName = String(chatName).replace(/[\u0000-\u001F\u007F-\u009F]/g, '').substring(0, 50);
-    
+
     // 保留中文字符，增加消息数量和长度以提供更多上下文
     const cleanMessages = messages.slice(0, 50).map(m => ({
       timestamp: m.timestamp,
@@ -226,7 +233,7 @@ class AIService {
       content: String(m.content).replace(/[\u0000-\u001F\u007F-\u009F]/g, '').substring(0, 300) // 增加内容长度
     }));
 
-    const messagesText = cleanMessages.map(m => 
+    const messagesText = cleanMessages.map(m =>
       `[${m.timestamp}] ${m.sender}: ${m.content}`
     ).join('\n');
 
@@ -240,18 +247,23 @@ class AIService {
     // 使用简洁的中文prompt（限制内容数量，适合一图展示）
     const userExamples = actualUsers.slice(0, 3).map(u => `"${u}"`).join(', ');
     const allUsers = actualUsers.map(u => `"${u}"`).join(', ');
-    
+
     // 为个人聊天和群聊定制不同的prompt
     const chatTypeText = chatType === 'private' ? '个人聊天' : '群聊';
-    const analysisTarget = chatType === 'private' ? 
-      `${chatTypeText}对象：${cleanChatName}` : 
+    const analysisTarget = chatType === 'private' ?
+      `${chatTypeText}对象：${cleanChatName}` :
       `${chatTypeText}：${cleanChatName}`;
-    
-    const prompt = chatType === 'private' ? 
+
+    // 构建日期信息
+    const dateInfo = dateRange ?
+      `日期范围：${dateRange.startDate} 至 ${dateRange.endDate}` :
+      `日期：${date}`;
+
+    const prompt = chatType === 'private' ?
       `分析微信个人聊天记录，生成简洁但信息丰富的JSON格式日报（适合一张图片展示）。
 
 ${analysisTarget}
-日期：${date}
+${dateInfo}
 参与用户：${actualUsers.join(', ')}
 
 聊天记录：
@@ -331,7 +343,7 @@ ${messagesText}
       `分析微信群聊记录，生成简洁但信息丰富的JSON格式日报（适合一张图片展示）。
 
 ${analysisTarget}
-日期：${date}
+${dateInfo}
 参与用户：${actualUsers.join(', ')}
 
 聊天记录：
@@ -446,7 +458,7 @@ JSON格式严格要求：
 
     try {
       console.log('🔍 开始调用AI API...');
-      
+
       const response = await this.client!.chat.completions.create({
         model: this.config!.model,
         messages: [
@@ -473,14 +485,14 @@ JSON格式严格要求：
 
       // 简单的JSON提取和解析
       let jsonStr = content.trim();
-      
+
       // 移除可能的markdown标记
       jsonStr = jsonStr.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-      
+
       // 查找JSON部分
       const startIndex = jsonStr.indexOf('{');
       const endIndex = jsonStr.lastIndexOf('}');
-      
+
       if (startIndex !== -1 && endIndex !== -1) {
         jsonStr = jsonStr.substring(startIndex, endIndex + 1);
       }
@@ -516,7 +528,7 @@ JSON格式严格要求：
 
     } catch (error) {
       console.error('❌ JSON解析失败:', error);
-      
+
       // 如果解析失败，返回基本结构
       return {
         id: `digest-${date}`,
@@ -545,10 +557,11 @@ JSON格式严格要求：
 
   // 生成文本日报
   private async generateTextReport(
-    messages: any[], 
-    chatName: string, 
+    messages: any[],
+    chatName: string,
     date: string,
-    digest: DailyDigest
+    digest: DailyDigest,
+    dateRange?: { startDate: string; endDate: string }
   ): Promise<string> {
     // 保留中文字符，只清理控制字符
     const cleanMessages = messages.slice(0, 20).map(m => ({
@@ -557,7 +570,7 @@ JSON格式严格要求：
       content: String(m.content).replace(/[\u0000-\u001F\u007F-\u009F]/g, '').substring(0, 200)
     }));
 
-    const messagesText = cleanMessages.map(m => 
+    const messagesText = cleanMessages.map(m =>
       `[${m.timestamp}] ${m.sender}: ${m.content}`
     ).join('\n');
 
@@ -612,7 +625,7 @@ ${messagesText}
   // 计算高峰时段
   private calculatePeakTime(messages: any[]): string {
     const hourCounts: { [hour: number]: number } = {};
-    
+
     messages.forEach(msg => {
       const hour = parseInt(msg.timestamp.split(':')[0]);
       hourCounts[hour] = (hourCounts[hour] || 0) + 1;

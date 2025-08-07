@@ -172,8 +172,8 @@ ipcMain.handle('chatlog:getChatrooms', async () => {
       .filter((room: any) => {
         // 更宽松的群聊过滤条件
         return room.name && (
-          room.name.includes('@chatroom') || 
-          room.nickName || 
+          room.name.includes('@chatroom') ||
+          room.nickName ||
           room.remark ||
           (room.users && room.users.length > 2) // 有多个用户的聊天室
         );
@@ -213,17 +213,17 @@ ipcMain.handle('chatlog:getContacts', async () => {
         if (!contact.userName) {
           return false;
         }
-        
+
         // 排除没有昵称的联系人（可能是系统账号）
         if (!contact.nickName) {
           return false;
         }
-        
+
         // 只保留好友
         if (contact.isFriend === false) {
           return false;
         }
-        
+
         return true;
       })
       .map((contact: any) => ({
@@ -249,7 +249,7 @@ ipcMain.handle('chatlog:getDailyMessages', async (_, talker: string, date: strin
 
   try {
     console.log('📡 主进程开始获取消息:', { talker, date });
-    
+
     const response = await chatlogApi.get('/api/v1/chatlog', {
       params: {
         talker,
@@ -260,17 +260,48 @@ ipcMain.handle('chatlog:getDailyMessages', async (_, talker: string, date: strin
 
     console.log('📡 主进程API响应状态:', response.status);
     console.log('📡 主进程API响应数据类型:', Array.isArray(response.data) ? 'Array' : typeof response.data);
-    
+
     // Chatlog API直接返回数组
     const messages = Array.isArray(response.data) ? response.data : (response.data.items || response.data.data || []);
-    
+
     console.log('📡 主进程解析到消息数量:', messages.length);
     return { success: true, data: messages };
   } catch (error) {
     console.error('📡 主进程API调用失败:', error);
     return { success: false, error: (error as Error).message };
   }
-}); 
+});
+
+// 新增：获取日期范围的消息
+ipcMain.handle('chatlog:getDateRangeMessages', async (_, talker: string, startDate: string, endDate: string) => {
+  if (!chatlogApi) {
+    return { success: false, error: 'Chatlog API not initialized' };
+  }
+
+  try {
+    console.log('📡 主进程开始获取日期范围消息:', { talker, startDate, endDate });
+
+    const response = await chatlogApi.get('/api/v1/chatlog', {
+      params: {
+        talker,
+        time: startDate + '~' + endDate,
+        format: 'json'
+      }
+    });
+
+    console.log('📡 主进程API响应状态:', response.status);
+    console.log('📡 主进程API响应数据类型:', Array.isArray(response.data) ? 'Array' : typeof response.data);
+
+    // Chatlog API直接返回数组
+    const messages = Array.isArray(response.data) ? response.data : (response.data.items || response.data.data || []);
+
+    console.log('📡 主进程解析到消息数量:', messages.length);
+    return { success: true, data: messages };
+  } catch (error) {
+    console.error('📡 主进程API调用失败:', error);
+    return { success: false, error: (error as Error).message };
+  }
+});
 
 ipcMain.handle('chatlog:getResource', async (_, url: string) => {
   if (!chatlogApi) {
@@ -279,10 +310,10 @@ ipcMain.handle('chatlog:getResource', async (_, url: string) => {
 
   try {
     console.log('📡 主进程开始获取资源:', { url });
-    
+
     // 处理URL格式
     const resourcePath = url.startsWith('http') ? url : `/data/${url}`;
-    
+
     // 使用responseType: 'arraybuffer' 获取二进制数据
     const response = await chatlogApi.get(resourcePath, {
       responseType: 'arraybuffer',
@@ -295,11 +326,11 @@ ipcMain.handle('chatlog:getResource', async (_, url: string) => {
     console.log('📡 主进程API响应状态:', response.status);
     console.log('📡 主进程API响应头信息:', response.headers);
     console.log('📡 主进程API响应数据大小:', response.data ? response.data.length : 0, '字节');
-    
+
     return { success: true, data: response.data, headers: response.headers };
   } catch (error) {
     console.error('📡 主进程API调用失败:', error);
-    
+
     // 提供更详细的错误信息
     let errorMessage = '未知错误';
     if (error instanceof Error) {
@@ -310,7 +341,7 @@ ipcMain.handle('chatlog:getResource', async (_, url: string) => {
         name: error.name
       });
     }
-    
+
     return { success: false, error: errorMessage };
   }
 }); 

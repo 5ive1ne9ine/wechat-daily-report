@@ -163,7 +163,7 @@ export const DigestCard: React.FC<DigestCardProps> = ({
           <h2 className="card-header-title">{digest.chatGroupName}</h2>
           <div className="card-header-subtitle">
             <ClockCircleOutlined style={{ marginRight: '8px' }} />
-            {digest.date} {digest.chatType === 'private' ? '私聊日报' : '群聊日报'}
+            {digest.date} {digest.chatType === 'private' ? '私聊总结' : '群聊总结'}
           </div>
           <div className="avatar-group" style={{ marginTop: '20px' }}>
             {digest.activityStats.activeUsers.slice(0, 5).map((user: string, index: number) => (

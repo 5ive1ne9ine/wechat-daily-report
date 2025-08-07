@@ -40,6 +40,7 @@ import { ChatlogChatroom, DailyDigest, GeneratedReport, ChatTarget } from '../..
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 const DailyReport: React.FC = () => {
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -49,7 +50,10 @@ const DailyReport: React.FC = () => {
   const [feishuExportVisible, setFeishuExportVisible] = useState(false);
   const [chatTargets, setChatTargets] = useState<ChatTarget[]>([]);
   const [selectedChatTarget, setSelectedChatTarget] = useState<ChatTarget | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(dayjs().format('YYYY-MM-DD'));
+  const [selectedDateRange, setSelectedDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+    dayjs().subtract(6, 'day'),
+    dayjs()
+  ]);
   const [loading, setLoading] = useState(false);
   const [loadingChatTargets, setLoadingChatTargets] = useState(false);
   const [generatedReport, setGeneratedReport] = useState<GeneratedReport | null>(null);
@@ -138,10 +142,10 @@ const DailyReport: React.FC = () => {
   };
 
   const handleGenerateReport = async () => {
-    logService.info('🚀 点击生成日报按钮', null, 'DailyReport');
+    logService.info('🚀 点击生成总结按钮', null, 'DailyReport');
     logService.info('📊 当前状态', {
       selectedChatTarget: selectedChatTarget?.id,
-      selectedDate,
+      selectedDateRange: selectedDateRange?.map(d => d.format('YYYY-MM-DD')),
       isConfigured,
       chatTargetsLength: chatTargets.length
     }, 'DailyReport');
@@ -152,6 +156,12 @@ const DailyReport: React.FC = () => {
       return;
     }
 
+    if (!selectedDateRange || selectedDateRange.length !== 2) {
+      logService.warn('❌ 未选择日期范围', null, 'DailyReport');
+      message.warning('请选择要分析的日期范围');
+      return;
+    }
+
     if (!isConfigured) {
       logService.warn('❌ 配置未完成', null, 'DailyReport');
       message.warning('请先配置AI服务和Chatlog连接');
@@ -159,17 +169,30 @@ const DailyReport: React.FC = () => {
       return;
     }
 
-    logService.info('✅ 开始生成日报流程', null, 'DailyReport');
+    logService.info('✅ 开始生成总结流程', null, 'DailyReport');
     setLoading(true);
     try {
-      logService.info('📥 开始获取聊天记录...', { selectedChatTarget: selectedChatTarget.id, selectedDate }, 'DailyReport');
-      // 获取聊天记录
-      const messages = await chatlogService.getDailyMessages(selectedChatTarget.id, selectedDate);
+      const [startDate, endDate] = selectedDateRange;
+      const startDateStr = startDate.format('YYYY-MM-DD');
+      const endDateStr = endDate.format('YYYY-MM-DD');
+      
+      logService.info('📥 开始获取日期范围聊天记录...', { 
+        selectedChatTarget: selectedChatTarget.id, 
+        startDate: startDateStr,
+        endDate: endDateStr
+      }, 'DailyReport');
+      
+      // 获取日期范围的聊天记录
+      const messages = await chatlogService.getDateRangeMessages(selectedChatTarget.id, startDateStr, endDateStr);
       logService.info('📥 获取到聊天记录', { messageCount: messages.length }, 'DailyReport');
       
       if (messages.length === 0) {
-        logService.warn('❌ 该日期没有聊天记录', { selectedChatTarget: selectedChatTarget.id, selectedDate }, 'DailyReport');
-        message.warning('该日期没有聊天记录');
+        logService.warn('❌ 该日期范围没有聊天记录', { 
+          selectedChatTarget: selectedChatTarget.id, 
+          startDate: startDateStr,
+          endDate: endDateStr
+        }, 'DailyReport');
+        message.warning('该日期范围没有聊天记录');
         return;
       }
 
@@ -178,19 +201,25 @@ const DailyReport: React.FC = () => {
       const chatType = selectedChatTarget.type;
       logService.info('🏷️ 聊天对象信息', { chatName, chatType }, 'DailyReport');
 
-      logService.info('🤖 开始AI生成日报...', null, 'DailyReport');
-      // 生成日报
-      const report = await aiService.generateReport(messages, chatName, selectedDate, chatType);
+      logService.info('🤖 开始AI生成总结...', null, 'DailyReport');
+      // 生成总结，使用开始日期作为主要日期，传递日期范围信息
+      const report = await aiService.generateReport(
+        messages, 
+        chatName, 
+        startDateStr, 
+        chatType,
+        { startDate: startDateStr, endDate: endDateStr }
+      );
       logService.info('✅ 日报生成成功', { reportGenerated: !!report }, 'DailyReport');
       setGeneratedReport(report);
       
       message.success('日报生成成功！');
     } catch (error) {
-      logService.error('❌ 生成日报失败', { error: error instanceof Error ? error.message : String(error) }, 'DailyReport');
-      message.error(`生成日报失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      logService.error('❌ 生成总结失败', { error: error instanceof Error ? error.message : String(error) }, 'DailyReport');
+      message.error(`生成总结失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setLoading(false);
-      logService.info('🏁 生成日报流程结束', null, 'DailyReport');
+      logService.info('🏁 生成总结流程结束', null, 'DailyReport');
     }
   };
 
@@ -358,7 +387,7 @@ const DailyReport: React.FC = () => {
               title={
                 <Space>
                   <CalendarOutlined />
-                  <span>选择日期</span>
+                  <span>选择日期范围</span>
                 </Space>
               }
               style={{ 
@@ -376,17 +405,22 @@ const DailyReport: React.FC = () => {
               }}
             >
               <div style={{ flex: 1 }}>
-                <DatePicker
-                  value={dayjs(selectedDate)}
-                  onChange={(date) => setSelectedDate(date?.format('YYYY-MM-DD') || dayjs().format('YYYY-MM-DD'))}
+                <RangePicker
+                  value={selectedDateRange}
+                  onChange={(dates) => {
+                    if (dates && dates.length === 2) {
+                      setSelectedDateRange(dates as [dayjs.Dayjs, dayjs.Dayjs]);
+                    }
+                  }}
                   style={{ width: '100%' }}
                   disabledDate={(current) => current && current > dayjs().endOf('day')}
+                  placeholder={['开始日期', '结束日期']}
                 />
               </div>
               
               <Text type="secondary" style={{ fontSize: '12px' }}>
                 <CalendarOutlined style={{ marginRight: '4px' }} />
-                选择要分析的日期
+                选择要分析的日期范围（默认最近7天）
               </Text>
             </Card>
           </Col>
@@ -396,7 +430,7 @@ const DailyReport: React.FC = () => {
               title={
                 <Space>
                   <ThunderboltOutlined />
-                  <span>生成日报</span>
+                  <span>生成总结</span>
                 </Space>
               }
               style={{ 
@@ -423,7 +457,7 @@ const DailyReport: React.FC = () => {
                   disabled={!selectedChatTarget || !isConfigured}
                   style={{ width: '100%', height: '48px' }}
                 >
-                  {loading ? '生成中...' : '生成日报'}
+                  {loading ? '生成中...' : '生成总结'}
                 </Button>
               </div>
               
@@ -467,7 +501,7 @@ const DailyReport: React.FC = () => {
               image={Empty.PRESENTED_IMAGE_SIMPLE}
               description={
                 <Text type="secondary">
-                  选择群聊和日期，点击"生成日报"开始分析
+                  选择群聊和日期范围，点击"生成总结"开始分析
                 </Text>
               }
             />

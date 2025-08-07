@@ -15,6 +15,7 @@ const electronAPI = {
   chatlogGetChatrooms: () => ipcRenderer.invoke('chatlog:getChatrooms'),
   chatlogGetContacts: () => ipcRenderer.invoke('chatlog:getContacts'),
   chatlogGetDailyMessages: (talker: string, date: string) => ipcRenderer.invoke('chatlog:getDailyMessages', talker, date),
+  chatlogGetDateRangeMessages: (talker: string, startDate: string, endDate: string) => ipcRenderer.invoke('chatlog:getDateRangeMessages', talker, startDate, endDate),
   chatlogGetResource: (url: string) => ipcRenderer.invoke('chatlog:getResource', url),
   
   // 应用信息

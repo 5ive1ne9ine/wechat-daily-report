@@ -238,6 +238,7 @@ export interface ElectronAPI {
   chatlogGetChatrooms: () => Promise<{ success: boolean; data?: ChatlogChatroom[]; error?: string }>;
   chatlogGetContacts: () => Promise<{ success: boolean; data?: ChatlogContact[]; error?: string }>; // 新增
   chatlogGetDailyMessages: (talker: string, date: string) => Promise<{ success: boolean; data?: ChatlogMessage[]; error?: string }>;
+  chatlogGetDateRangeMessages: (talker: string, startDate: string, endDate: string) => Promise<{ success: boolean; data?: ChatlogMessage[]; error?: string }>;
   chatlogGetResource: (url: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   
   // 应用信息
